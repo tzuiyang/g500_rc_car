@@ -1,0 +1,24 @@
+# G500 — Node.js Server
+# Target: Raspberry Pi 5 (ARM64) or any amd64 machine
+FROM node:20-slim
+
+WORKDIR /app
+
+# Copy workspace manifests first for layer caching
+COPY package.json ./
+COPY server/package.json ./server/
+COPY ui/package.json ./ui/
+
+# Install ALL workspace deps
+RUN npm install --workspace=server --workspace=ui
+
+# Copy source
+COPY server/ ./server/
+COPY ui/ ./ui/
+
+ENV PORT=3000
+ENV NODE_ENV=production
+
+EXPOSE 3000
+
+CMD ["node", "server/index.js"]

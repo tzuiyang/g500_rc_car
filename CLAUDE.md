@@ -1,0 +1,370 @@
+# G500 RC Car — Claude Working Guide
+
+## Project Overview
+
+An FPV (First-Person View) RC car that people can drive remotely through their phone browser.
+
+### Hardware Stack
+| Component | Role |
+|-----------|------|
+| Raspberry Pi 5 | Main brain — networking, camera streaming, web server, ROS 2 orchestration |
+| Arduino Nano | Microcontroller — low-level PWM/motor control, serial bridge to RPi |
+| OAK-D Lite | Onboard camera — FPV video stream, ROS image topic, optional depth/AI |
+| 3D Printed Chassis | Custom frame (G500 style) |
+
+### Software Architecture
+```
+Phone Browser
+    │  WebSocket (drive commands) + MJPEG/WebRTC (FPV stream)
+    │  WebSocket (rosbag start/stop control)
+    ▼
+Raspberry Pi 5
+    ├── Node.js Server  (Express + WebSocket → rclnodejs → ROS 2)
+    ├── ROS 2 Network (Humble)
+    │     ├── /g500/cmd_vel          ← drive commands
+    │     ├── /g500/camera/image_raw ← camera frames
+    │     ├── /g500/arduino/status   ← MCU health
+    │     └── /g500/diagnostics      ← system health
+    ├── rosbag2 recorder  (start/stop via UI button, saves .db3 logs)
+    ├── Camera Node  (OAK-D Lite → ROS image topic + MJPEG stream)
+    └── Serial Bridge Node  (ROS cmd_vel → Arduino USB serial)
+            │
+            ▼
+    Arduino Nano
+        └── PWM → ESC (throttle) + Steering Servo
+```
+
+### Key Goals
+- [x] Project scaffolded and documented
+- [x] Docker / npm environment scaffold created (awaiting hardware test)
+- [x] Web UI scaffold — phone FPV controller (plain HTML, touch joystick + throttle)
+- [x] Server scaffold — Node.js Express + WebSocket + serial bridge
+- [x] Camera service scaffold — Python DepthAI MJPEG stream
+- [x] Arduino firmware scaffold — JSON serial protocol + failsafe
+- [x] ROS 2 integration defined — architecture + topic map
+- [ ] `npm install` + local dev test
+- [ ] ROS 2 Humble installed in Docker
+- [ ] rosbag2 recording + UI start/stop button
+- [ ] RPi OS setup + Docker install
+- [ ] Hardware test: Arduino serial communication
+- [ ] Hardware test: OAK-D Lite camera stream
+- [ ] End-to-end remote drive test
+- [ ] Chassis design / print files
+
+---
+
+## Working Rules (MUST FOLLOW)
+
+### 1. Topic MD Files
+Every distinct problem, feature, or subsystem gets its own markdown file:
+```
+docs/[topic].md
+```
+
+**Each topic file MUST contain all of these sections:**
+
+```
+## Problem
+## Theory
+## Unit Tests  ← REQUIRED: how to test this subsystem in isolation
+## Attempts    ← dated entries, never deleted
+## Issue Log   ← every failure with ISSUE FORMAT (see below)
+## Current Status
+## Solution
+```
+
+### 2. Always Read Before Working
+Before touching any topic, read its `.md` file first. This prevents dead-end loops.
+
+### 3. Always Update After Working
+After any attempt — success or failure — update the topic `.md` immediately.
+Never leave an attempt undocumented.
+
+### 4. No Dead-End Loops
+If an approach is documented as failed, do NOT retry it. Pivot or ask the user.
+
+### 5. Every Subsystem Must Have Tests
+Before marking any feature as done, a test must exist and be documented.
+No untested code is considered complete.
+
+### 6. Update This File
+When milestones are reached or architecture changes, update CLAUDE.md.
+
+---
+
+## Issue Format (use this every time something fails)
+
+When logging a failure in any `docs/[topic].md`, use this exact format:
+
+```
+### ISSUE-[number]: [Short title]
+**Date:** YYYY-MM-DD
+**Severity:** Critical / High / Medium / Low
+**Symptom:** What the user or test actually saw (exact error message or behavior)
+**Expected:** What should have happened
+**Steps to reproduce:**
+  1. ...
+  2. ...
+**Diagnosed cause:** (fill in when known, leave blank if unknown)
+**Fix applied:** (fill in when resolved)
+**Status:** Open / Fixed / Wont Fix
+**rosbag:** (filename if a bag was captured during this issue, else N/A)
+```
+
+Example:
+```
+### ISSUE-001: Arduino not detected on /dev/ttyUSB0
+**Date:** 2026-02-18
+**Severity:** High
+**Symptom:** Server logs "No Arduino detected. Running in mock mode."
+**Expected:** Serial port opens at /dev/ttyUSB0
+**Steps to reproduce:**
+  1. docker compose up server
+  2. Check server logs
+**Diagnosed cause:** Nano appears as /dev/ttyACM0 on this RPi
+**Fix applied:** Set SERIAL_PATH=/dev/ttyACM0 in .env
+**Status:** Fixed
+**rosbag:** N/A
+```
+
+---
+
+## Unit Testing Requirements
+
+Every subsystem must have tests. Tests live in `tests/[subsystem]/`.
+
+### Test Standards
+- Tests must be runnable with a single command (documented in the topic file)
+- Tests must be runnable WITHOUT hardware where possible (use mocks/stubs)
+- Every test must have a clear PASS / FAIL output — no ambiguous results
+- Failed tests must be logged as an ISSUE in the relevant topic file
+
+### Test Map — Required Tests Per Subsystem
+
+| Subsystem | Test File | Run Command | Hardware Needed? |
+|-----------|-----------|-------------|------------------|
+| Server (Node.js) | `tests/server/server.test.js` | `npm test --workspace=server` | No |
+| Serial bridge | `tests/server/serial.test.js` | `npm test --workspace=server` | No (mocked) |
+| WebSocket protocol | `tests/server/ws.test.js` | `npm test --workspace=server` | No |
+| Arduino firmware | `tests/firmware/protocol_test/` | Arduino Serial Monitor | Yes (Nano) |
+| Camera service | `tests/camera/test_stream.py` | `python tests/camera/test_stream.py` | No (mocked) |
+| ROS topics | `tests/ros/test_topics.py` | `pytest tests/ros/` | No (mock node) |
+| rosbag record/stop | `tests/ros/test_bag.py` | `pytest tests/ros/` | No |
+| UI controls | Manual test checklist | See `docs/web-ui.md` | No |
+
+### How to Run All Tests
+```bash
+# JS unit tests (server)
+npm test
+
+# Python tests (camera + ROS)
+pytest tests/
+
+# Full integration test (requires hardware)
+bash scripts/integration_test.sh
+```
+
+---
+
+## ROS 2 Integration
+
+### Version: ROS 2 Humble (LTS, supported until 2027)
+Runs inside Docker on the RPi 5. All services communicate via ROS 2 DDS.
+
+### Topic Map
+| Topic | Type | Publisher | Subscriber |
+|-------|------|-----------|------------|
+| `/g500/cmd_vel` | `geometry_msgs/Twist` | Node.js server (rclnodejs) | Serial bridge node |
+| `/g500/camera/image_raw` | `sensor_msgs/Image` | Camera node (DepthAI) | rosbag2 |
+| `/g500/camera/compressed` | `sensor_msgs/CompressedImage` | Camera node | MJPEG streamer |
+| `/g500/arduino/status` | `std_msgs/String` (JSON) | Serial bridge node | rosbag2, diagnostics |
+| `/g500/diagnostics` | `diagnostic_msgs/DiagnosticArray` | All nodes | rosbag2 |
+| `/g500/bag/control` | `std_msgs/String` | Node.js server | Bag recorder node |
+
+### cmd_vel Mapping
+```
+Twist.linear.x   → throttle  (-1.0 to 1.0)
+Twist.angular.z  → steering  (-1.0 to 1.0, left positive)
+All other fields → 0
+```
+
+### ROS 2 Docker Service
+Added as a fourth container in docker-compose:
+- `ros-core` — runs `ros2 launch g500 g500_bringup.launch.py`
+- Includes serial bridge node, bag recorder node, diagnostics aggregator
+- Node.js server connects as a rclnodejs node
+
+See `docs/ros-integration.md` for full setup details.
+
+---
+
+## rosbag2 Logging
+
+### Purpose
+Record all ROS 2 topics to disk so every hardware or software issue can be
+replayed and analyzed after the fact. This is the primary debugging tool.
+
+### Storage
+```
+logs/
+└── bags/
+    └── YYYY-MM-DD_HH-MM-SS/   ← one folder per recording session
+        ├── metadata.yaml
+        └── *.db3
+```
+Bags are gitignored (too large). Back up to external storage manually.
+
+### UI Control
+The phone UI has a **REC button** (top-left corner):
+- **Tap once** → sends `{"type":"bag","action":"start"}` over WebSocket
+- Server calls `ros2 bag record -a -o logs/bags/<timestamp>` as a subprocess
+- Button turns red + shows elapsed time
+- **Tap again** → sends `{"type":"bag","action":"stop"}`
+- Server kills the bag process, bag is finalized
+
+### What Gets Recorded
+By default, all topics (`-a` flag):
+- Drive commands, camera frames, Arduino status, diagnostics
+
+### Analysis Commands
+```bash
+# List recorded bags
+ls logs/bags/
+
+# Inspect a bag
+ros2 bag info logs/bags/<session-name>
+
+# Play back a bag (replays all topics)
+ros2 bag play logs/bags/<session-name>
+
+# Plot a topic value over time (requires rqt)
+rqt
+
+# Export cmd_vel to CSV for spreadsheet analysis
+python scripts/bag_to_csv.py logs/bags/<session-name> /g500/cmd_vel
+
+# Check for gaps / dropped frames
+python scripts/bag_inspect.py logs/bags/<session-name>
+```
+
+### Correlating Issues to Bags
+Every ISSUE in a topic doc should reference the bag filename if one was recorded.
+This lets us replay exact conditions that caused a bug.
+
+---
+
+## Environment & Portability
+
+- **Docker Compose** — full production stack on RPi (`docker compose up -d`)
+- **npm workspaces** — JS dev tooling (`npm run dev`, `npm test`)
+- **ROS 2 Humble** — runs inside Docker, all inter-service comms go through ROS topics
+
+### .env File (create locally, never commit)
+```
+SERIAL_PATH=/dev/ttyUSB0
+SERIAL_BAUD=115200
+ROS_DOMAIN_ID=42
+BAG_DIR=/home/pi/g500_rc_car/logs/bags
+```
+
+See `docs/docker-setup.md` for environment setup progress.
+
+---
+
+## Repository Structure
+```
+g500_rc_car/
+├── CLAUDE.md                        ← this file
+├── README.md                        ← user-facing setup guide
+├── package.json                     ← npm workspace root
+├── .gitignore
+│
+├── docs/                            ← one .md per topic/subsystem
+│   ├── docker-setup.md
+│   ├── raspberry-pi-setup.md
+│   ├── arduino-firmware.md
+│   ├── camera-streaming.md
+│   ├── serial-communication.md
+│   ├── web-ui.md
+│   └── ros-integration.md           ← NEW
+│
+├── server/                          ← Node.js backend (RPi)
+│   ├── package.json
+│   └── index.js
+│
+├── ui/                              ← Phone FPV controller (plain HTML)
+│   ├── package.json
+│   └── index.html
+│
+├── camera/                          ← Python camera service
+│   ├── requirements.txt
+│   └── stream.py
+│
+├── ros/                             ← ROS 2 packages (NEW)
+│   └── g500/
+│       ├── package.xml
+│       ├── setup.py
+│       └── g500/
+│           ├── serial_bridge_node.py
+│           ├── bag_recorder_node.py
+│           └── diagnostics_node.py
+│
+├── firmware/                        ← Arduino Nano
+│   └── g500_nano/
+│       └── g500_nano.ino
+│
+├── tests/                           ← All unit + integration tests (NEW)
+│   ├── server/
+│   │   ├── server.test.js
+│   │   ├── serial.test.js
+│   │   └── ws.test.js
+│   ├── camera/
+│   │   └── test_stream.py
+│   ├── ros/
+│   │   ├── test_topics.py
+│   │   └── test_bag.py
+│   └── firmware/
+│       └── protocol_test/           ← Arduino test sketch
+│           └── protocol_test.ino
+│
+├── docker/
+│   ├── Dockerfile.server
+│   ├── Dockerfile.camera
+│   ├── Dockerfile.ros               ← NEW
+│   └── docker-compose.yml
+│
+├── scripts/
+│   ├── bag_to_csv.py                ← Export bag topic to CSV
+│   ├── bag_inspect.py               ← Check bag health/gaps
+│   └── integration_test.sh          ← Full hardware integration test
+│
+└── logs/                            ← gitignored
+    └── bags/
+        └── .gitkeep
+```
+
+---
+
+## Current Progress Log
+
+| Date | Event |
+|------|-------|
+| 2026-02-18 | Project initialized, CLAUDE.md and directory structure created |
+| 2026-02-18 | Full code scaffold: server, UI, camera service, Arduino firmware, Docker |
+| 2026-02-18 | CLAUDE.md updated: added unit testing rules, issue format, ROS 2 integration, rosbag logging |
+
+---
+
+## Hardware Notes
+
+- **RPi 5** runs Raspberry Pi OS (64-bit). Ensure USB serial is enabled.
+- **Arduino Nano** connected via USB to RPi 5. Serial baud 115200.
+- **OAK-D Lite** connected via USB 3.0 (blue port) to RPi 5. Uses DepthAI SDK.
+- **ESC** — type TBD based on motor selection.
+- **Steering servo** — standard 50 Hz PWM, 1000–2000 µs.
+
+---
+
+## Contact / Repo
+- GitHub: upload project root; `.gitignore` covers `node_modules/`, `logs/`, build artifacts, secrets.
+- Never commit `.env` files.

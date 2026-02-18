@@ -1,0 +1,19 @@
+{
+  "name": "g500-rc-car",
+  "version": "0.1.0",
+  "description": "FPV RC car — RPi 5 brain, Arduino Nano MCU, OAK-D Lite camera, phone web UI",
+  "private": true,
+  "workspaces": [
+    "server",
+    "ui"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace=server & npm run dev --workspace=ui",
+    "build": "npm run build --workspace=ui",
+    "start": "npm run start --workspace=server",
+    "install:all": "npm install"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

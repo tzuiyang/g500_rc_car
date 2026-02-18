@@ -1,0 +1,448 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>G500 FPV</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --accent: #00e5ff;
+      --danger: #ff1744;
+      --bg: #0a0a0a;
+      --panel: rgba(255,255,255,0.05);
+    }
+
+    html, body {
+      width: 100%; height: 100%;
+      background: var(--bg);
+      color: #fff;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+      touch-action: none;
+    }
+
+    /* ── Status bar ── */
+    #statusbar {
+      position: fixed; top: 0; left: 0; right: 0;
+      height: 36px;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(8px);
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 14px;
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      z-index: 100;
+    }
+    .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #444;
+      transition: background 0.3s;
+    }
+    .dot.online { background: #00e676; box-shadow: 0 0 6px #00e676; }
+    .dot.error  { background: var(--danger); box-shadow: 0 0 6px var(--danger); }
+    #status-text { flex: 1; }
+    #latency { opacity: 0.5; }
+
+    /* ── Camera feed ── */
+    #camera-wrap {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #camera {
+      width: 100%; height: 100%;
+      object-fit: cover;
+    }
+    #no-camera {
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      gap: 8px; opacity: 0.3;
+      font-size: 14px;
+    }
+    #no-camera svg { width: 48px; height: 48px; fill: #fff; }
+
+    /* ── Controls overlay ── */
+    #controls {
+      position: fixed;
+      bottom: 0; left: 0; right: 0;
+      height: 220px;
+      background: linear-gradient(to top, rgba(0,0,0,0.7) 60%, transparent);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 20px 24px;
+      pointer-events: none;
+    }
+
+    .joystick-zone {
+      width: 160px; height: 160px;
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 50%;
+      pointer-events: all;
+      position: relative;
+      display: flex; align-items: center; justify-content: center;
+      touch-action: none;
+    }
+    .joystick-label {
+      position: absolute;
+      bottom: -22px;
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      opacity: 0.4;
+      width: 100%; text-align: center;
+    }
+    .joystick-knob {
+      width: 56px; height: 56px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 18px rgba(0,229,255,0.5);
+      position: absolute;
+      pointer-events: none;
+      transition: transform 0.05s;
+    }
+
+    /* Throttle — right side, vertical only */
+    #throttle-zone {
+      width: 64px; height: 160px;
+      background: var(--panel);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 32px;
+      pointer-events: all;
+      position: relative;
+      display: flex; align-items: center; justify-content: center;
+      touch-action: none;
+    }
+    #throttle-track {
+      width: 4px; height: 100%;
+      background: rgba(255,255,255,0.1);
+      border-radius: 2px;
+      position: absolute;
+    }
+    #throttle-fill {
+      position: absolute;
+      bottom: 50%; left: 50%;
+      transform: translateX(-50%);
+      width: 4px;
+      background: var(--accent);
+      border-radius: 2px;
+      height: 0;
+      transition: height 0.05s, background 0.1s;
+    }
+    #throttle-knob {
+      width: 44px; height: 44px;
+      background: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 14px rgba(0,229,255,0.5);
+      position: absolute;
+      pointer-events: none;
+    }
+    #throttle-zone .joystick-label { bottom: -22px; }
+
+    /* ── E-Stop button ── */
+    #estop {
+      position: fixed;
+      top: 44px; right: 14px;
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      border: 2px solid var(--danger);
+      background: rgba(255,23,68,0.15);
+      color: var(--danger);
+      font-size: 9px;
+      font-weight: bold;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      z-index: 100;
+      touch-action: manipulation;
+    }
+    #estop:active { background: var(--danger); color: #fff; }
+  </style>
+</head>
+<body>
+
+  <!-- Status bar -->
+  <div id="statusbar">
+    <div class="dot" id="dot"></div>
+    <span id="status-text">CONNECTING…</span>
+    <span id="latency"></span>
+  </div>
+
+  <!-- Camera feed -->
+  <div id="camera-wrap">
+    <div id="no-camera">
+      <!-- camera icon -->
+      <svg viewBox="0 0 24 24"><path d="M12 9a3 3 0 1 0 0 6 3 3 0 0 0 0-6zm0-2a5 5 0 1 1 0 10A5 5 0 0 1 12 7zm6.5-2H19l-1.5-2h-11L5 5h.5A2.5 2.5 0 0 0 3 7.5v9A2.5 2.5 0 0 0 5.5 19h13a2.5 2.5 0 0 0 2.5-2.5v-9A2.5 2.5 0 0 0 18.5 5z"/></svg>
+      <span>No camera stream</span>
+    </div>
+    <img id="camera" src="" alt="FPV" style="display:none" />
+  </div>
+
+  <!-- E-Stop -->
+  <button id="estop">STOP</button>
+
+  <!-- Controls -->
+  <div id="controls">
+    <!-- Steering joystick (horizontal only) -->
+    <div class="joystick-zone" id="steer-zone">
+      <div class="joystick-knob" id="steer-knob"></div>
+      <span class="joystick-label">STEERING</span>
+    </div>
+
+    <!-- Throttle slider -->
+    <div id="throttle-zone">
+      <div id="throttle-track"></div>
+      <div id="throttle-fill"></div>
+      <div id="throttle-knob"></div>
+      <span class="joystick-label">THROTTLE</span>
+    </div>
+  </div>
+
+<script>
+// ── Config ───────────────────────────────────────────────────────────────────
+// In production on RPi, the server is the same host.
+// For local dev, override WS_URL in the browser console.
+const WS_URL    = window.WS_URL    || `ws://${location.hostname}:3000`;
+const CAM_URL   = window.CAM_URL   || `http://${location.hostname}:3000/stream`;
+const SEND_HZ   = 30; // max commands per second
+
+// ── State ────────────────────────────────────────────────────────────────────
+let ws = null;
+let steering = 0;   // -1..1
+let throttle = 0;   // -1..1
+let sendTimer = null;
+let pingTimer = null;
+let lastPong = Date.now();
+
+// ── DOM refs ─────────────────────────────────────────────────────────────────
+const dot        = document.getElementById('dot');
+const statusText = document.getElementById('status-text');
+const latencyEl  = document.getElementById('latency');
+const camImg     = document.getElementById('camera');
+const noCam      = document.getElementById('no-camera');
+const estop      = document.getElementById('estop');
+const steerZone  = document.getElementById('steer-zone');
+const steerKnob  = document.getElementById('steer-knob');
+const throttleZone  = document.getElementById('throttle-zone');
+const throttleKnob  = document.getElementById('throttle-knob');
+const throttleFill  = document.getElementById('throttle-fill');
+
+// ── Camera ───────────────────────────────────────────────────────────────────
+camImg.onload = () => { camImg.style.display = 'block'; noCam.style.display = 'none'; };
+camImg.onerror = () => { camImg.style.display = 'none'; noCam.style.display = 'flex'; };
+camImg.src = CAM_URL;
+
+// ── WebSocket ────────────────────────────────────────────────────────────────
+function connect() {
+  ws = new WebSocket(WS_URL);
+
+  ws.onopen = () => {
+    setStatus('CONNECTED', 'online');
+    startSending();
+    startPing();
+  };
+
+  ws.onmessage = (ev) => {
+    try {
+      const msg = JSON.parse(ev.data);
+      if (msg.type === 'pong') {
+        const rtt = Date.now() - lastPong;
+        latencyEl.textContent = `${rtt}ms`;
+      }
+    } catch { /* ignore */ }
+  };
+
+  ws.onclose = () => {
+    setStatus('DISCONNECTED — retrying…', 'error');
+    stopSending();
+    stopPing();
+    setTimeout(connect, 2000);
+  };
+
+  ws.onerror = () => {
+    ws.close();
+  };
+}
+
+function setStatus(text, state) {
+  statusText.textContent = text;
+  dot.className = 'dot ' + (state || '');
+}
+
+// ── Command loop ─────────────────────────────────────────────────────────────
+function startSending() {
+  if (sendTimer) return;
+  sendTimer = setInterval(sendCmd, 1000 / SEND_HZ);
+}
+function stopSending() {
+  clearInterval(sendTimer);
+  sendTimer = null;
+}
+function sendCmd() {
+  if (!ws || ws.readyState !== WebSocket.OPEN) return;
+  ws.send(JSON.stringify({ throttle, steering }));
+}
+
+// ── Ping / latency ───────────────────────────────────────────────────────────
+function startPing() {
+  pingTimer = setInterval(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      lastPong = Date.now();
+      ws.send(JSON.stringify({ type: 'ping' }));
+    }
+  }, 1000);
+}
+function stopPing() {
+  clearInterval(pingTimer);
+  pingTimer = null;
+}
+
+// ── Steering joystick (horizontal only) ──────────────────────────────────────
+(function setupSteering() {
+  const R = steerZone.offsetWidth / 2;
+  const KNOB_R = steerKnob.offsetWidth / 2;
+  let active = false;
+  let originX = 0;
+  let touchId = null;
+
+  function update(x) {
+    const rect = steerZone.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const dx = x - cx;
+    const maxDx = rect.width / 2 - KNOB_R;
+    const clamped = Math.max(-maxDx, Math.min(maxDx, dx));
+    steerKnob.style.transform = `translateX(${clamped}px)`;
+    steering = clamped / maxDx;
+  }
+
+  function reset() {
+    steerKnob.style.transform = 'translateX(0)';
+    steering = 0;
+    active = false;
+    touchId = null;
+  }
+
+  steerZone.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    touchId = t.identifier;
+    active = true;
+    update(t.clientX);
+  }, { passive: false });
+
+  steerZone.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === touchId) { update(t.clientX); break; }
+    }
+  }, { passive: false });
+
+  steerZone.addEventListener('touchend', (e) => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === touchId) { reset(); break; }
+    }
+  });
+  steerZone.addEventListener('touchcancel', reset);
+
+  // Mouse for desktop testing
+  steerZone.addEventListener('mousedown', (e) => { active = true; update(e.clientX); });
+  window.addEventListener('mousemove', (e) => { if (active) update(e.clientX); });
+  window.addEventListener('mouseup', () => { if (active) reset(); });
+})();
+
+// ── Throttle slider (vertical) ───────────────────────────────────────────────
+(function setupThrottle() {
+  let touchId = null;
+
+  function update(y) {
+    const rect = throttleZone.getBoundingClientRect();
+    const cy = rect.top + rect.height / 2;
+    const knobH = throttleKnob.offsetHeight / 2;
+    const dy = cy - y;
+    const maxDy = rect.height / 2 - knobH;
+    const clamped = Math.max(-maxDy, Math.min(maxDy, dy));
+    // knob position (0 = center)
+    throttleKnob.style.transform = `translateY(${-clamped}px)`;
+    throttle = clamped / maxDy;
+
+    // fill bar
+    const fillH = Math.abs(clamped);
+    throttleFill.style.height = fillH + 'px';
+    if (throttle > 0) {
+      throttleFill.style.bottom = '50%';
+      throttleFill.style.background = 'var(--accent)';
+    } else {
+      throttleFill.style.bottom = 'calc(50% - ' + fillH + 'px)';
+      throttleFill.style.background = '#ff6d00';
+    }
+  }
+
+  function reset() {
+    throttleKnob.style.transform = 'translateY(0)';
+    throttleFill.style.height = '0';
+    throttle = 0;
+    touchId = null;
+  }
+
+  throttleZone.addEventListener('touchstart', (e) => {
+    e.preventDefault();
+    const t = e.changedTouches[0];
+    touchId = t.identifier;
+    update(t.clientY);
+  }, { passive: false });
+
+  throttleZone.addEventListener('touchmove', (e) => {
+    e.preventDefault();
+    for (const t of e.changedTouches) {
+      if (t.identifier === touchId) { update(t.clientY); break; }
+    }
+  }, { passive: false });
+
+  throttleZone.addEventListener('touchend', (e) => {
+    for (const t of e.changedTouches) {
+      if (t.identifier === touchId) { reset(); break; }
+    }
+  });
+  throttleZone.addEventListener('touchcancel', reset);
+
+  // Mouse for desktop testing
+  let mActive = false;
+  throttleZone.addEventListener('mousedown', (e) => { mActive = true; update(e.clientY); });
+  window.addEventListener('mousemove', (e) => { if (mActive) update(e.clientY); });
+  window.addEventListener('mouseup', () => { if (mActive) { reset(); mActive = false; } });
+})();
+
+// ── Keyboard (desktop dev) ───────────────────────────────────────────────────
+(function setupKeyboard() {
+  const keys = {};
+  window.addEventListener('keydown', (e) => { keys[e.key] = true; });
+  window.addEventListener('keyup', (e) => { keys[e.key] = false; });
+  setInterval(() => {
+    if (keys['w'] || keys['ArrowUp'])    throttle = Math.min(throttle + 0.05, 1);
+    if (keys['s'] || keys['ArrowDown'])  throttle = Math.max(throttle - 0.05, -1);
+    if (!keys['w'] && !keys['ArrowUp'] && !keys['s'] && !keys['ArrowDown']) {
+      throttle *= 0.85; // coast to stop
+    }
+    if (keys['a'] || keys['ArrowLeft'])  steering = Math.max(steering - 0.1, -1);
+    if (keys['d'] || keys['ArrowRight']) steering = Math.min(steering + 0.1, 1);
+    if (!keys['a'] && !keys['ArrowLeft'] && !keys['d'] && !keys['ArrowRight']) {
+      steering *= 0.7;
+    }
+    if (Math.abs(throttle) < 0.02) throttle = 0;
+    if (Math.abs(steering) < 0.02) steering = 0;
+  }, 1000 / 30);
+})();
+
+// ── E-Stop ───────────────────────────────────────────────────────────────────
+estop.addEventListener('click', () => {
+  throttle = 0;
+  steering = 0;
+  sendCmd();
+});
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+connect();
+</script>
+</body>
+</html>

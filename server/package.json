@@ -1,0 +1,18 @@
+{
+  "name": "g500-server",
+  "version": "0.1.0",
+  "description": "G500 RC car — RPi backend: WebSocket command relay + serial bridge + HTTP server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "nodemon index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "ws": "^8.17.0",
+    "serialport": "^12.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.0"
+  }
+}

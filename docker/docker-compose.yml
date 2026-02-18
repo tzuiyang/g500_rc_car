@@ -1,0 +1,53 @@
+version: "3.9"
+
+# G500 RC Car — Full Stack
+# Usage:
+#   RPi deployment : docker compose up -d
+#   Dev (no camera): docker compose up server
+#
+# Environment variables (override in .env file):
+#   SERIAL_PATH  — e.g. /dev/ttyUSB0  (auto-detected if blank)
+#   SERIAL_BAUD  — default 115200
+#   CAMERA_URL   — default http://camera:8080/stream
+
+services:
+
+  # ── Node.js backend + UI ────────────────────────────────────────────────────
+  server:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.server
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      SERIAL_PATH: ${SERIAL_PATH:-}          # leave blank for auto-detect
+      SERIAL_BAUD: ${SERIAL_BAUD:-115200}
+      CAMERA_URL: http://camera:8080/stream
+    # Pass Arduino serial device into container
+    devices:
+      - "${SERIAL_PATH:-/dev/ttyUSB0}:/dev/ttyUSB0"
+    depends_on:
+      - camera
+    networks:
+      - g500
+
+  # ── Python camera service (OAK-D Lite → MJPEG) ─────────────────────────────
+  camera:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.camera
+    restart: unless-stopped
+    # OAK-D Lite needs USB access
+    privileged: true
+    volumes:
+      - /dev/bus/usb:/dev/bus/usb
+    ports:
+      - "8080:8080"   # exposed for direct debug; server proxies it internally
+    networks:
+      - g500
+
+networks:
+  g500:
+    driver: bridge

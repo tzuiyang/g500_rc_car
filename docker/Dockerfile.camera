@@ -1,0 +1,27 @@
+# G500 — Camera Service (OAK-D Lite via DepthAI)
+# Target: Raspberry Pi 5 (ARM64)
+# Note: OAK-D Lite requires USB 3.0 and privileged access in Docker
+FROM python:3.11-slim
+
+WORKDIR /app
+
+# System deps for DepthAI + OpenCV
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libusb-1.0-0 \
+    libgl1 \
+    libglib2.0-0 \
+    udev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Python deps
+COPY camera/requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+COPY camera/ .
+
+ENV STREAM_PORT=8080
+ENV STREAM_HOST=0.0.0.0
+
+EXPOSE 8080
+
+CMD ["python", "stream.py"]

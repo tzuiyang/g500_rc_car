@@ -1,0 +1,12 @@
+{
+  "name": "g500-ui",
+  "version": "0.1.0",
+  "description": "G500 RC car — Phone FPV controller UI (plain HTML, no build step)",
+  "scripts": {
+    "dev": "npx serve . -p 5173 --cors",
+    "build": "echo 'No build step needed — plain HTML'"
+  },
+  "devDependencies": {
+    "serve": "^14.2.3"
+  }
+}
