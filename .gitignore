@@ -39,6 +39,9 @@ desktop.ini
 *.swp
 *.swo
 
+# Claude Code local data
+.claude/
+
 # Logs
 *.log
 
