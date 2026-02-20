@@ -1,6 +1,6 @@
 # Topic: Motor First Test Run (L298N + DC Motor)
 
-**Status: `[ ] In Progress`**
+**Status: `[x] Solved`**
 
 ---
 
@@ -152,16 +152,26 @@ pio device monitor --baud 115200
 
 ### Next Actions
 - [x] Flash `firmware/motor_test/` to Nano via `pio run --target upload`
-- [ ] Open serial monitor (`pio device monitor --baud 115200`), verify auto-test output
-- [ ] Watch motor physically — confirm forward ramp, reverse ramp, stop, PWM steps
-- [ ] Log any further issues using ISSUE FORMAT
-- [ ] If all pass → mark `[x] Solved` and proceed to servo/ESC test
+- [x] Open serial monitor — all 5 auto-tests printed DONE
+- [ ] Confirm motor physically spun forward / reverse / stopped (verify with eyes)
+- [ ] If physical confirmed → fully solved, proceed to servo/ESC test
 
 ---
 
 ## Solution
 
-_Not yet solved — pending hardware test._
+**Board:** `nanoatmega328new` (new optiboot bootloader) on COM6
+**Upload command:** `pio run --target upload` from `firmware/motor_test/`
+**Serial monitor:** `pio device monitor --port COM6 --baud 115200`
+
+All 5 auto-tests passed on 2026-02-20:
+- Forward ramp ✓
+- Stop ✓
+- Reverse ramp ✓
+- Stop ✓
+- PWM steps (64/128/192/255) ✓
+
+Key lesson: Clone Nano (CH340 chip) uses **new optiboot bootloader** — always use `nanoatmega328new` in PlatformIO for these boards.
 
 ---
 
