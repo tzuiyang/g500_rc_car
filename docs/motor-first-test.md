@@ -116,26 +116,46 @@ pio device monitor --baud 115200
 **What we did:** Defined wiring, created PlatformIO project at
 `firmware/motor_test/`, wrote auto-test + manual control firmware.
 **Result:** Code written. Not yet flashed — awaiting hardware test.
-**Next step:** Flash to Nano, run test sequence, log results here.
+
+### Attempt 2 — First flash (2026-02-20)
+**What we did:** Ran `pio run --target upload` on COM6 with `board = nanoatmega328`.
+**Result:** FAILED — avrdude `stk500_recv(): programmer is not responding`, resp=0x82.
+**Diagnosed cause:** Clone Nano has new optiboot bootloader (post-2018). Old STK500v1 protocol incompatible.
+**Fix:** Changed `platformio.ini` to `board = nanoatmega328new`. See ISSUE-001.
+
+### Attempt 3 — Flash with new bootloader (2026-02-20)
+**What we did:** Re-ran `pio run --target upload` with `board = nanoatmega328new` on COM6.
+**Result:** SUCCESS — 4440 bytes written and verified in 5.69s.
+**Next step:** Open serial monitor, watch motor run auto-test sequence.
 
 ---
 
 ## Issue Log
 
-_No issues yet._
+### ISSUE-001: Nano not responding to upload — old bootloader config
+**Date:** 2026-02-20
+**Severity:** High
+**Symptom:** `avrdude: stk500_recv(): programmer is not responding` — 10 attempts, all fail with resp=0x82
+**Expected:** Firmware uploads successfully
+**Steps to reproduce:**
+  1. `pio run --target upload` with `board = nanoatmega328` on COM6
+**Diagnosed cause:** Clone Arduino Nano uses new optiboot bootloader. `nanoatmega328` uses STK500v1 protocol which is incompatible with new bootloader.
+**Fix applied:** Changed `platformio.ini` board to `nanoatmega328new` which uses the correct protocol.
+**Status:** Fixed
+**rosbag:** N/A
 
 ---
 
 ## Current Status
 
-`[ ] In Progress` — Firmware written. Pending hardware flash and test.
+`[ ] In Progress` — Firmware flashed successfully. Pending motor physical test.
 
 ### Next Actions
-- [ ] Flash `firmware/motor_test/` to Nano via `pio run --target upload`
-- [ ] Open serial monitor, verify auto-test output
-- [ ] Watch motor physically, confirm forward/reverse/stop
-- [ ] Log any issues above using ISSUE FORMAT
-- [ ] If all pass → mark `[x] Solved` and proceed to servo test
+- [x] Flash `firmware/motor_test/` to Nano via `pio run --target upload`
+- [ ] Open serial monitor (`pio device monitor --baud 115200`), verify auto-test output
+- [ ] Watch motor physically — confirm forward ramp, reverse ramp, stop, PWM steps
+- [ ] Log any further issues using ISSUE FORMAT
+- [ ] If all pass → mark `[x] Solved` and proceed to servo/ESC test
 
 ---
 
