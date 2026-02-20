@@ -142,7 +142,8 @@ JSON parsing is a simple `indexOf` scan — fast, zero memory overhead.
 
 ### Attempt 2 — PlatformIO rewrite for L298N (2026-02-20)
 **What we did:** Created `firmware/g500_nano/platformio.ini` + `src/main.cpp` targeting L298N wiring confirmed in motor_test. Added speed level 1–9 system, JSON+manual serial protocol, failsafe watchdog. No external libraries.
-**Result:** Written. Pending flash and test.
+**Result:** Written and flashed successfully — 6952 bytes verified on COM6 in 5.02s.
+**Boot confirmed:** `{"status":"ready","speed":5}` received immediately. Failsafe fires after 500ms silence as expected.
 
 ---
 
@@ -159,13 +160,15 @@ _No issues yet. See `docs/motor-first-test.md` for ISSUE-001 (bootloader mismatc
 ### Next Actions
 - [x] Confirm hardware wiring (from motor_test)
 - [x] Write PlatformIO firmware with speed levels
-- [ ] Flash `firmware/g500_nano/` and run manual verification checklist above
-- [ ] Log results / issues
-- [ ] Test JSON mode (for future RPi integration)
-- [ ] Mark solved when all checklist items pass
+- [x] Flash `firmware/g500_nano/` — 6952 bytes verified
+- [x] Boot reply confirmed: `{"status":"ready","speed":5}`
+- [x] Failsafe confirmed: fires after 500ms
+- [ ] Full manual verification checklist (F/B/S/1-9 with motor physically spinning)
+- [ ] Test JSON mode end-to-end with RPi
+- [ ] Mark solved when full checklist passes
 
 ---
 
 ## Solution
 
-_Not yet solved — pending hardware test._
+_Partially solved — firmware flashed and boot confirmed. Full physical drive test pending._
