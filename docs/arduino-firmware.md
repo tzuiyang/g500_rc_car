@@ -1,111 +1,171 @@
 # Topic: Arduino Nano Firmware
 
-**Status: `[ ] Not Started`**
+**Status: `[ ] In Progress`**
 
 ---
 
 ## Problem
 
 The Arduino Nano needs firmware that:
-1. Receives drive commands from the Raspberry Pi over USB serial
-2. Translates those commands into PWM signals for the ESC (throttle) and servo (steering)
-3. Handles a safety failsafe — stop motors if serial communication is lost
+1. Drives a DC motor via L298N (throttle PWM + direction pins)
+2. Supports a speed level 1–9 that caps maximum motor power
+3. Accepts manual serial commands (F / B / S / 1–9) for standalone testing
+4. Accepts JSON commands from the Raspberry Pi for autonomous/ROS control
+5. Stops the motor automatically (failsafe) if serial communication is lost
 
 ---
 
 ## Theory
 
-### Serial Protocol (Planned)
-Simple JSON or binary packet over USB serial at 115200 baud.
+### Hardware — L298N + DC Motor
+Confirmed working from `docs/motor-first-test.md`.
 
-Example JSON command:
+| Pin | Connected to | Purpose |
+|-----|-------------|---------|
+| D5  | L298N ENA   | PWM speed (0–255) |
+| D8  | L298N IN1   | Direction bit A |
+| D9  | L298N IN2   | Direction bit B |
+
+L298N direction truth table:
+| IN1 | IN2 | Motor |
+|-----|-----|-------|
+| HIGH | LOW | Forward |
+| LOW | HIGH | Backward |
+| LOW | LOW | Stop (coast) |
+
+### Speed Levels 1–9
+Speed level caps maximum PWM. Changing level while moving updates speed immediately.
+
+| Level | PWM  | % Power |
+|-------|------|---------|
+| 1     | 28   | 11% |
+| 2     | 56   | 22% |
+| 3     | 85   | 33% |
+| 4     | 113  | 44% |
+| 5     | 141  | 55% (default) |
+| 6     | 170  | 67% |
+| 7     | 198  | 78% |
+| 8     | 226  | 89% |
+| 9     | 255  | 100% |
+
+### Serial Protocol
+All commands at **115200 baud**, newline-terminated.
+
+**Manual commands (human / serial monitor):**
+| Command | Action |
+|---------|--------|
+| `1`–`9` | Set speed level. Updates immediately, even while moving |
+| `F` | Forward at current speed level |
+| `B` | Backward at current speed level |
+| `S` | Stop |
+
+**JSON commands (RPi / ROS bridge):**
 ```json
-{"throttle": 0.5, "steering": -0.3}
+{"t": 0.75}
 ```
-- `throttle`: -1.0 (full reverse) to 1.0 (full forward), 0 = stop
-- `steering`: -1.0 (full left) to 1.0 (full right), 0 = straight
+- `t` range: -1.0 (full backward) → 0 (stop) → 1.0 (full forward)
+- Magnitude is scaled by the current speed level cap — cannot exceed it
+- `B` is kept as alias for `R` (backwards compat with motor_test)
 
-### PWM Output
-- Standard RC servo/ESC PWM: 50 Hz, pulse width 1000–2000 µs
-  - 1500 µs = neutral (stop / straight)
-  - 1000 µs = full reverse / full left
-  - 2000 µs = full forward / full right
-- Use Arduino `Servo.h` library for both ESC and steering servo
+**Status replies (JSON, always sent back):**
+```json
+{"status":"ready","speed":5}       ← on boot
+{"status":"forward","speed":5}     ← on F
+{"status":"backward","speed":5}    ← on B
+{"status":"stop","speed":5}        ← on S
+{"status":"speed","level":3}       ← on 1–9
+{"status":"failsafe"}              ← watchdog triggered
+```
 
 ### Failsafe
-- Track last command timestamp
-- If no valid command received within 500ms → set throttle to 0, steering to neutral
-- Prevents runaway car if WiFi drops
+- If no valid command received for **500 ms** → motor stops, prints failsafe status
+- Next valid command clears failsafe and resumes normally
 
-### Pin Assignment (TBD)
-| Pin | Function |
-|-----|----------|
-| D9  | ESC (throttle PWM) |
-| D10 | Steering servo PWM |
+### No External Libraries
+The main firmware uses no external libraries (no ArduinoJson, no Servo.h).
+JSON parsing is a simple `indexOf` scan — fast, zero memory overhead.
 
 ---
 
 ## Unit Tests
 
-### Test Sketch: `tests/firmware/protocol_test/protocol_test.ino`
-Upload this sketch (not the main firmware) to the Nano to run protocol tests
-via the Arduino Serial Monitor at 115200 baud.
-
-**Tests it runs automatically on boot:**
-| # | Test | Pass Condition |
-|---|------|----------------|
-| 1 | Valid JSON parse `{"t":0.5,"s":-0.3}` | PWM D9 = 1750µs, D10 = 1350µs |
-| 2 | Neutral command `{"t":0,"s":0}` | Both PWM = 1500µs |
-| 3 | Clamp max `{"t":1.5,"s":2.0}` | Both PWM = 2000µs (not over) |
-| 4 | Clamp min `{"t":-2.0,"s":-1.5}` | Both PWM = 1000µs (not under) |
-| 5 | Malformed JSON `{bad}` | PWM unchanged, no crash |
-| 6 | Failsafe timeout | After 600ms silence → PWM = 1500µs, prints `{"status":"failsafe"}` |
-
-**Run command:**
-```
-1. Upload tests/firmware/protocol_test/protocol_test.ino to Nano
-2. Open Serial Monitor @ 115200 baud
-3. All PASS lines should appear within 3 seconds
-4. Re-upload main firmware when done
-```
-
 ### Manual Verification (hardware required)
 ```
-1. Flash main firmware
-2. Open Serial Monitor
-3. Confirm "{"status":"ready"}" appears on boot
-4. Send: {"t":1.0,"s":0.0}  → ESC should spin up
-5. Send: {"t":0,"s":0}       → ESC should stop
-6. Disconnect USB for 600ms  → failsafe should trigger ("{"status":"failsafe"}")
+1. Flash firmware/g500_nano/ to Nano:
+   pio run --target upload  (from firmware/g500_nano/)
+
+2. Open serial monitor:
+   pio device monitor --port COM6 --baud 115200
+
+3. Confirm on boot:
+   {"status":"ready","speed":5}
+
+4. Test speed levels:
+   Send: 3   →  {"status":"speed","level":3}
+   Send: F   →  {"status":"forward","speed":3}  motor spins slowly
+   Send: 7   →  {"status":"speed","level":7}    motor speeds up immediately
+   Send: S   →  {"status":"stop","speed":7}     motor stops
+
+5. Test forward/backward:
+   Send: F   →  motor forward
+   Send: B   →  motor reverses
+   Send: S   →  stop
+
+6. Test failsafe:
+   Send: F   →  motor starts
+   Disconnect USB data (or stop sending) for 600ms
+   Motor should stop, serial prints {"status":"failsafe"}
+
+7. Test JSON mode:
+   Send: {"t":0.5}   →  forward at 50% of current speed level
+   Send: {"t":-1.0}  →  full backward (capped at speed level)
+   Send: {"t":0}     →  stop
 ```
+
+### Speed Level Test Checklist
+| Send | Expected reply | Motor behaviour |
+|------|---------------|----------------|
+| `5`  | `{"status":"speed","level":5}` | Speed stored |
+| `F`  | `{"status":"forward","speed":5}` | Spins ~55% |
+| `9`  | `{"status":"speed","level":9}` | Immediately faster |
+| `1`  | `{"status":"speed","level":1}` | Immediately slower |
+| `S`  | `{"status":"stop","speed":1}` | Stops |
+| `B`  | `{"status":"backward","speed":1}` | Slow reverse |
 
 ---
 
 ## Attempts
 
-_None yet._
+### Attempt 1 — Old ESC/Servo firmware scaffold (2026-02-18)
+**What we did:** Wrote `firmware/g500_nano/g500_nano.ino` targeting ESC+Servo via Servo.h.
+**Result:** Outdated — hardware confirmed as L298N, not ESC. Kept as reference only.
+
+### Attempt 2 — PlatformIO rewrite for L298N (2026-02-20)
+**What we did:** Created `firmware/g500_nano/platformio.ini` + `src/main.cpp` targeting L298N wiring confirmed in motor_test. Added speed level 1–9 system, JSON+manual serial protocol, failsafe watchdog. No external libraries.
+**Result:** Written. Pending flash and test.
 
 ---
 
 ## Issue Log
 
-_No issues yet._
+_No issues yet. See `docs/motor-first-test.md` for ISSUE-001 (bootloader mismatch — fixed)._
 
 ---
 
 ## Current Status
 
-`[ ] Not Started`
+`[ ] In Progress` — Firmware written. Pending flash and physical test.
 
 ### Next Actions
-- [ ] Decide serial protocol (JSON vs binary)
-- [ ] Write basic firmware: receive serial → set servo PWM
-- [ ] Add failsafe timer
-- [ ] Test with Arduino IDE serial monitor
-- [ ] Test end-to-end with RPi serial bridge
+- [x] Confirm hardware wiring (from motor_test)
+- [x] Write PlatformIO firmware with speed levels
+- [ ] Flash `firmware/g500_nano/` and run manual verification checklist above
+- [ ] Log results / issues
+- [ ] Test JSON mode (for future RPi integration)
+- [ ] Mark solved when all checklist items pass
 
 ---
 
 ## Solution
 
-_Not yet solved._
+_Not yet solved — pending hardware test._
