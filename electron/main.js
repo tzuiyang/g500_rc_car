@@ -2,21 +2,24 @@
  * G500 Electron — dumb display shell.
  *
  * This file has no business logic. Its only job:
- *   1. Read G500_URL to know where the RPi server is
+ *   1. Read G500_URL (or g500.config.json) to know where the RPi server is
  *   2. Open a window
  *   3. Tell the renderer what URLs to connect to
  *
  * Everything else (camera, serial, ROS) runs on the RPi.
  *
  * Laptop usage:
- *   npm run app                              ← connects to http://g500.local:3000
- *   G500_URL=http://192.168.1.107:3000 npm run app   ← override if mDNS doesn't work
+ *   npm run app                              ← uses rpiUrl from g500.config.json
+ *   G500_URL=http://192.168.1.107:3000 npm run app   ← env var override
+ *
+ * To change the RPi IP, edit g500.config.json at the repo root.
  */
 
 const { app, BrowserWindow } = require('electron')
 const path = require('path')
 
-const BASE = (process.env.G500_URL || 'http://g500.local:3000').replace(/\/$/, '')
+const config = require('../g500.config.json')
+const BASE = (process.env.G500_URL || config.rpiUrl).replace(/\/$/, '')
 
 function createWindow() {
   const win = new BrowserWindow({
