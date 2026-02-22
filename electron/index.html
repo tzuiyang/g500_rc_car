@@ -1,0 +1,363 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>G500 FPV</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0a0a0a;
+      --surface:   #141414;
+      --border:    #242424;
+      --accent:    #00e5ff;
+      --red:       #ff3b3b;
+      --green:     #00e676;
+      --text:      #e0e0e0;
+      --muted:     #606060;
+      --font:      'SF Mono', 'Fira Code', 'Consolas', monospace;
+    }
+
+    html, body {
+      height: 100%;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      overflow: hidden;
+      user-select: none;
+    }
+
+    /* ── Layout ─────────────────────────────────────────────────────── */
+    .layout {
+      display: grid;
+      grid-template-rows: 40px 1fr 36px;
+      height: 100vh;
+    }
+
+    /* ── Top bar ─────────────────────────────────────────────────────── */
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      -webkit-app-region: drag;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      -webkit-app-region: no-drag;
+    }
+
+    .logo {
+      font-size: 13px;
+      font-weight: 700;
+      letter-spacing: 0.12em;
+      color: var(--accent);
+      text-transform: uppercase;
+    }
+
+    .page-label {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      -webkit-app-region: no-drag;
+    }
+
+    .status-pill {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+    }
+    .status-dot.live   { background: var(--green); box-shadow: 0 0 6px var(--green); }
+    .status-dot.error  { background: var(--red);   box-shadow: 0 0 6px var(--red); }
+    .status-dot.pulse  { animation: pulse 1.2s infinite; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.3; }
+    }
+
+    /* ── Camera area ─────────────────────────────────────────────────── */
+    .camera-area {
+      position: relative;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #000;
+      overflow: hidden;
+    }
+
+    #feed {
+      display: block;
+      max-width: 100%;
+      max-height: 100%;
+      width: auto;
+      height: auto;
+      object-fit: contain;
+    }
+
+    /* Corner scan lines — purely cosmetic FPV vibe */
+    .camera-area::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 3px,
+        rgba(0,0,0,0.04) 3px,
+        rgba(0,0,0,0.04) 4px
+      );
+      pointer-events: none;
+      z-index: 1;
+    }
+
+    /* Corner brackets */
+    .bracket {
+      position: absolute;
+      width: 32px;
+      height: 32px;
+      z-index: 2;
+    }
+    .bracket-tl { top: 12px;    left: 12px;    border-top: 2px solid var(--accent); border-left: 2px solid var(--accent); }
+    .bracket-tr { top: 12px;    right: 12px;   border-top: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+    .bracket-bl { bottom: 12px; left: 12px;    border-bottom: 2px solid var(--accent); border-left: 2px solid var(--accent); }
+    .bracket-br { bottom: 12px; right: 12px;   border-bottom: 2px solid var(--accent); border-right: 2px solid var(--accent); }
+
+    /* Crosshair */
+    .crosshair {
+      position: absolute;
+      z-index: 2;
+      pointer-events: none;
+    }
+    .crosshair::before,
+    .crosshair::after {
+      content: '';
+      position: absolute;
+      background: rgba(0, 229, 255, 0.35);
+    }
+    .crosshair::before { width: 1px; height: 20px; top: -10px; left: 0; }
+    .crosshair::after  { width: 20px; height: 1px; left: -10px; top: 0; }
+
+    /* Overlay states */
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      background: rgba(0, 0, 0, 0.75);
+      z-index: 3;
+    }
+    .overlay.hidden { display: none; }
+
+    .overlay-icon {
+      font-size: 40px;
+      opacity: 0.5;
+    }
+
+    .overlay-text {
+      font-size: 13px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .overlay-sub {
+      font-size: 11px;
+      color: #404040;
+      letter-spacing: 0.06em;
+    }
+
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Bottom bar ──────────────────────────────────────────────────── */
+    .bottombar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 16px;
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      font-size: 10px;
+      color: #404040;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+
+    #fps-counter { color: var(--muted); }
+  </style>
+</head>
+<body>
+
+<div class="layout">
+
+  <!-- Top bar -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <span class="logo">G500</span>
+      <span class="page-label">/ Drive</span>
+    </div>
+    <div class="topbar-right">
+      <div class="status-pill">
+        <div class="status-dot pulse" id="cam-dot"></div>
+        <span id="cam-label">Connecting…</span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Camera feed -->
+  <main class="camera-area" id="camera-area">
+
+    <!-- Loading overlay -->
+    <div class="overlay" id="overlay-loading">
+      <div class="spinner"></div>
+      <div class="overlay-text">Starting camera</div>
+      <div class="overlay-sub">http://127.0.0.1:8080/stream</div>
+    </div>
+
+    <!-- Error overlay -->
+    <div class="overlay hidden" id="overlay-error">
+      <div class="overlay-icon">⚠</div>
+      <div class="overlay-text">Camera unavailable</div>
+      <div class="overlay-sub" id="error-detail">Could not connect to stream server</div>
+    </div>
+
+    <!-- MJPEG image -->
+    <img id="feed" alt="" />
+
+    <!-- HUD decorations -->
+    <div class="bracket bracket-tl"></div>
+    <div class="bracket bracket-tr"></div>
+    <div class="bracket bracket-bl"></div>
+    <div class="bracket bracket-br"></div>
+    <div class="crosshair"></div>
+
+  </main>
+
+  <!-- Bottom bar -->
+  <footer class="bottombar">
+    <span>G500 FPV RC Car</span>
+    <span id="fps-counter">— fps</span>
+    <span id="resolution">—</span>
+  </footer>
+
+</div>
+
+<script>
+  const feed          = document.getElementById('feed')
+  const camDot        = document.getElementById('cam-dot')
+  const camLabel      = document.getElementById('cam-label')
+  const overlayLoad   = document.getElementById('overlay-loading')
+  const overlayError  = document.getElementById('overlay-error')
+  const errorDetail   = document.getElementById('error-detail')
+  const fpsCounter    = document.getElementById('fps-counter')
+  const resolutionEl  = document.getElementById('resolution')
+
+  let streamUrl   = null
+  let frameCount  = 0
+  let lastFpsTick = performance.now()
+
+  // ── FPS counter ────────────────────────────────────────────────────
+  feed.addEventListener('load', () => {
+    frameCount++
+    const now = performance.now()
+    if (now - lastFpsTick >= 1000) {
+      const fps = Math.round(frameCount * 1000 / (now - lastFpsTick))
+      fpsCounter.textContent = `${fps} fps`
+      frameCount  = 0
+      lastFpsTick = now
+    }
+    if (feed.naturalWidth) {
+      resolutionEl.textContent = `${feed.naturalWidth}×${feed.naturalHeight}`
+    }
+  })
+
+  // ── Stream status ──────────────────────────────────────────────────
+  function setLive() {
+    overlayLoad.classList.add('hidden')
+    overlayError.classList.add('hidden')
+    camDot.className = 'status-dot live'
+    camLabel.textContent = 'Live'
+  }
+
+  function setError(detail) {
+    overlayLoad.classList.add('hidden')
+    overlayError.classList.remove('hidden')
+    camDot.className = 'status-dot error'
+    camLabel.textContent = 'No signal'
+    errorDetail.textContent = detail || 'Could not connect to stream server'
+  }
+
+  function setConnecting() {
+    overlayLoad.classList.remove('hidden')
+    overlayError.classList.add('hidden')
+    camDot.className = 'status-dot pulse'
+    camLabel.textContent = 'Connecting…'
+  }
+
+  // ── Load stream ────────────────────────────────────────────────────
+  function startStream(url) {
+    streamUrl = url
+    setConnecting()
+
+    // MJPEG: each completed "load" event is a new frame in Chromium
+    feed.onload  = () => { setLive(); frameCount++ }
+    feed.onerror = () => {
+      setError(`Stream unreachable: ${url}`)
+      // Retry after 3 s
+      setTimeout(() => {
+        if (streamUrl) {
+          feed.src = streamUrl + '?t=' + Date.now()
+        }
+      }, 3000)
+    }
+
+    feed.src = url
+  }
+
+  // ── IPC from main process ──────────────────────────────────────────
+  window.g500.onCameraStatus(({ ready, url }) => {
+    if (ready) {
+      startStream(url)
+    } else {
+      setError('Camera server failed to start — check that webcam is connected')
+    }
+  })
+</script>
+</body>
+</html>

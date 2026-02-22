@@ -9,7 +9,7 @@ An FPV (First-Person View) RC car that people can drive remotely through their p
 |-----------|------|
 | Raspberry Pi 5 | Main brain — networking, camera streaming, web server, ROS 2 orchestration |
 | Arduino Nano | Microcontroller — low-level PWM/motor control, serial bridge to RPi |
-| OAK-D Lite | Onboard camera — FPV video stream, ROS image topic, optional depth/AI |
+| Innomaker U20CAM 1080p | Onboard camera — FPV video stream via MJPEG, V4L2/UVC USB webcam |
 | 3D Printed Chassis | Custom frame (G500 style) |
 
 ### Software Architecture
@@ -26,7 +26,7 @@ Raspberry Pi 5
     │     ├── /g500/arduino/status   ← MCU health
     │     └── /g500/diagnostics      ← system health
     ├── rosbag2 recorder  (start/stop via UI button, saves .db3 logs)
-    ├── Camera Node  (OAK-D Lite → ROS image topic + MJPEG stream)
+    ├── Camera Node  (U20CAM 1080p → MJPEG stream via webcam_stream.py)
     └── Serial Bridge Node  (ROS cmd_vel → Arduino USB serial)
             │
             ▼
@@ -39,15 +39,20 @@ Raspberry Pi 5
 - [x] Docker / npm environment scaffold created (awaiting hardware test)
 - [x] Web UI scaffold — phone FPV controller (plain HTML, touch joystick + throttle)
 - [x] Server scaffold — Node.js Express + WebSocket + serial bridge
-- [x] Camera service scaffold — Python DepthAI MJPEG stream
+- [x] Camera service scaffold — Python OpenCV MJPEG stream (webcam_stream.py)
 - [x] Arduino firmware scaffold — JSON serial protocol + failsafe
 - [x] ROS 2 integration defined — architecture + topic map
-- [ ] `npm install` + local dev test
+- [x] Node.js + npm installed on RPi (v20.19.2 / 9.2.0)
+- [x] USB webcam detected (`/dev/video0`) — Innomaker U20CAM 1080p
+- [x] Webcam MJPEG stream server — `camera/webcam_stream.py` (OpenCV + Flask)
+- [x] Electron desktop app scaffolded — `npm run app` launches FPV UI with live stream
+- [ ] First live run: `npm run app` + confirm camera stream appears
 - [ ] ROS 2 Humble installed in Docker
 - [ ] rosbag2 recording + UI start/stop button
 - [ ] RPi OS setup + Docker install
 - [ ] Hardware test: Arduino serial communication
-- [ ] Hardware test: OAK-D Lite camera stream
+- [ ] Hardware test: U20CAM camera stream (webcam_stream.py)
+- [ ] Driving controls in Electron UI (joystick → WebSocket → server)
 - [ ] End-to-end remote drive test
 - [ ] Chassis design / print files
 
@@ -175,7 +180,7 @@ Runs inside Docker on the RPi 5. All services communicate via ROS 2 DDS.
 | Topic | Type | Publisher | Subscriber |
 |-------|------|-----------|------------|
 | `/g500/cmd_vel` | `geometry_msgs/Twist` | Node.js server (rclnodejs) | Serial bridge node |
-| `/g500/camera/image_raw` | `sensor_msgs/Image` | Camera node (DepthAI) | rosbag2 |
+| `/g500/camera/image_raw` | `sensor_msgs/Image` | Camera node (OpenCV/V4L2) | rosbag2 |
 | `/g500/camera/compressed` | `sensor_msgs/CompressedImage` | Camera node | MJPEG streamer |
 | `/g500/arduino/status` | `std_msgs/String` (JSON) | Serial bridge node | rosbag2, diagnostics |
 | `/g500/diagnostics` | `diagnostic_msgs/DiagnosticArray` | All nodes | rosbag2 |
@@ -286,7 +291,8 @@ g500_rc_car/
 │   ├── camera-streaming.md
 │   ├── serial-communication.md
 │   ├── web-ui.md
-│   └── ros-integration.md           ← NEW
+│   ├── ros-integration.md
+│   └── electron-app.md              ← Electron desktop FPV UI
 │
 ├── server/                          ← Node.js backend (RPi)
 │   ├── package.json
@@ -296,9 +302,15 @@ g500_rc_car/
 │   ├── package.json
 │   └── index.html
 │
+├── electron/                        ← Electron desktop app
+│   ├── package.json
+│   ├── main.js                      ← main process: spawns camera, opens window
+│   ├── preload.js                   ← contextBridge IPC
+│   └── index.html                   ← FPV driving UI renderer
+│
 ├── camera/                          ← Python camera service
 │   ├── requirements.txt
-│   └── stream.py
+│   └── webcam_stream.py             ← U20CAM 1080p (OpenCV/V4L2) MJPEG server
 │
 ├── ros/                             ← ROS 2 packages (NEW)
 │   └── g500/
@@ -352,6 +364,11 @@ g500_rc_car/
 | 2026-02-18 | Project initialized, CLAUDE.md and directory structure created |
 | 2026-02-18 | Full code scaffold: server, UI, camera service, Arduino firmware, Docker |
 | 2026-02-18 | CLAUDE.md updated: added unit testing rules, issue format, ROS 2 integration, rosbag logging |
+| 2026-02-22 | Hardware first contact: USB webcam detected (`/dev/video0`, Innomaker U20CAM 1080p) |
+| 2026-02-22 | Node.js v20.19.2 + npm 9.2.0 installed on RPi via apt |
+| 2026-02-22 | `camera/webcam_stream.py` created — OpenCV + Flask MJPEG server for USB webcam |
+| 2026-02-22 | Electron desktop app scaffolded — `electron/` workspace, `npm run app` wired up |
+| 2026-02-22 | Electron v20.18.3 installed; `docs/electron-app.md` and `docs/camera-streaming.md` updated |
 
 ---
 
@@ -359,7 +376,7 @@ g500_rc_car/
 
 - **RPi 5** runs Raspberry Pi OS (64-bit). Ensure USB serial is enabled.
 - **Arduino Nano** connected via USB to RPi 5. Serial baud 115200.
-- **OAK-D Lite** connected via USB 3.0 (blue port) to RPi 5. Uses DepthAI SDK.
+- **Camera** — Innomaker U20CAM 1080p. USB 2.0 UVC webcam. Detected as `/dev/video0`. Streams via `camera/webcam_stream.py`.
 - **ESC** — type TBD based on motor selection.
 - **Steering servo** — standard 50 Hz PWM, 1000–2000 µs.
 

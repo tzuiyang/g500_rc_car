@@ -17,7 +17,7 @@ The project must be portable — runnable on any machine (Windows dev laptop, Ma
 | Option | Pros | Cons |
 |--------|------|------|
 | **Docker Compose** | Fully isolated, reproducible, cross-platform | USB device passthrough (camera, Arduino serial) needs extra config on Linux/RPi |
-| **npm workspaces** | Simple for JS-only parts (UI, server) | Doesn't isolate OS-level deps (Python, DepthAI, ffmpeg) |
+| **npm workspaces** | Simple for JS-only parts (UI, server, electron) | Doesn't isolate OS-level deps (Python, OpenCV, ffmpeg) |
 | **Combined: Docker for runtime, npm for dev** | Best of both | Slightly more complex to set up |
 
 ### Decision
@@ -30,12 +30,12 @@ Use **Docker Compose** as the primary runtime target (for RPi deployment), and *
 docker-compose.yml
 ├── service: server       (Node.js — WebSocket + HTTP API)
 ├── service: ui           (Nginx serving built React/HTML UI)
-└── service: camera       (Python + DepthAI — OAK-D Lite stream)
+└── service: camera       (Python + OpenCV — U20CAM 1080p MJPEG stream)
 ```
 
 USB passthrough in Docker on Linux (RPi):
-- Arduino serial: `/dev/ttyUSB0` or `/dev/ttyACM0` → volume mount in server container
-- OAK-D Lite: USB device passthrough via `privileged: true` or `devices:` in compose
+- Arduino serial: `/dev/ttyUSB0` or `/dev/ttyACM0` → `devices:` mount in server container
+- U20CAM webcam: `/dev/video0` → `devices:` mount in camera container (no `privileged` needed)
 
 ---
 
@@ -50,16 +50,16 @@ USB passthrough in Docker on Linux (RPi):
 - `package.json` — npm workspace root (`server` + `ui`)
 - `server/package.json` + `server/index.js` — Express + WebSocket + serialport
 - `ui/package.json` + `ui/index.html` — plain HTML FPV controller (no build step)
-- `camera/stream.py` + `camera/requirements.txt` — DepthAI MJPEG stream via Flask
+- `camera/webcam_stream.py` + `camera/requirements.txt` — OpenCV MJPEG stream via Flask
 - `docker/Dockerfile.server` — Node.js 20 slim
-- `docker/Dockerfile.camera` — Python 3.11 + DepthAI + Flask
+- `docker/Dockerfile.camera` — Python 3.11 + OpenCV + Flask (V4L2 deps)
 - `docker/docker-compose.yml` — orchestrates server + camera; USB/serial passthrough configured
 
 **Result:** All files created. Not yet tested — awaiting RPi hardware.
 
 **Known gotchas to watch:**
 - `devices:` in compose uses `${SERIAL_PATH:-/dev/ttyUSB0}`. If Nano appears as `/dev/ttyACM0`, set `SERIAL_PATH=/dev/ttyACM0` in a `.env` file.
-- OAK-D Lite requires `privileged: true` in camera container — standard DepthAI Docker requirement.
+- U20CAM webcam uses standard V4L2 — only needs `/dev/video0` in `devices:`, no `privileged` required.
 - Arduino firmware requires **ArduinoJson** library installed via Arduino Library Manager before flashing.
 - The UI docker-compose plan changed: UI is served directly by the Node.js Express server (no separate Nginx container needed for v1).
 
@@ -79,7 +79,7 @@ USB passthrough in Docker on Linux (RPi):
 - [ ] Run `npm install` locally to verify package resolution
 - [ ] Test server-only: `docker compose up server` on dev machine (no hardware)
 - [ ] Test on RPi 5: `docker compose up` with Arduino serial passthrough
-- [ ] Test OAK-D Lite USB passthrough in camera container on RPi
+- [ ] Test U20CAM `/dev/video0` passthrough in camera container on RPi
 
 ---
 

@@ -6,7 +6,7 @@
 
 ## Problem
 
-The Raspberry Pi 5 needs to be configured as the car's onboard brain: OS installed, networking configured, USB serial to Arduino enabled, OAK-D Lite recognized, and the server software auto-starting on boot.
+The Raspberry Pi 5 needs to be configured as the car's onboard brain: OS installed, networking configured, USB serial to Arduino enabled, U20CAM webcam recognized, and the server software auto-starting on boot.
 
 ---
 
@@ -28,7 +28,7 @@ The Raspberry Pi 5 needs to be configured as the car's onboard brain: OS install
 
 ### USB Devices
 - Arduino Nano: appears as `/dev/ttyUSB0` or `/dev/ttyACM0`
-- OAK-D Lite: USB 3.0 port (important for bandwidth), appears as `/dev/bus/usb/...`
+- U20CAM 1080p: USB 2.0, appears as `/dev/video0` (confirmed). Add user to `video` group: `sudo usermod -aG video $USER`
 - Add user to `dialout` group for serial access: `sudo usermod -aG dialout $USER`
 
 ---
@@ -49,7 +49,7 @@ _None yet._
 - [ ] Set hostname to `g500.local`
 - [ ] Install Docker on RPi 5
 - [ ] Install Node.js (via nvm or Docker)
-- [ ] Test OAK-D Lite detection (`lsusb`)
+- [ ] Confirm U20CAM detection (`v4l2-ctl --list-devices` → `/dev/video0`)
 - [ ] Test Arduino serial communication
 - [ ] Set up systemd service or Docker restart policy
 

@@ -1,0 +1,13 @@
+{
+  "name": "g500-electron",
+  "version": "0.1.0",
+  "description": "G500 RC car — Electron desktop app (FPV driving UI)",
+  "main": "main.js",
+  "private": true,
+  "scripts": {
+    "app": "electron ."
+  },
+  "devDependencies": {
+    "electron": "^33.0.0"
+  }
+}

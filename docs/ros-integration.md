@@ -44,11 +44,11 @@ serial_bridge_node.py
 Arduino Nano (USB serial)
 
 
-OAK-D Lite
+U20CAM 1080p (/dev/video0)
     │ captured by
     ▼
-camera_node.py (DepthAI)
-    │ publishes
+webcam_stream.py (OpenCV/V4L2)
+    │ publishes (if ROS bridge added)
     ├── /g500/camera/image_raw      (sensor_msgs/Image)
     └── /g500/camera/compressed     (sensor_msgs/CompressedImage)
 

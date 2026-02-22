@@ -1,3 +1,2 @@
-depthai>=2.24.0
 opencv-python-headless>=4.9.0
 flask>=3.0.0

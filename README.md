@@ -2,7 +2,7 @@
 
 A remotely driven FPV RC car — stream live video and control the car from your phone browser.
 
-**Hardware:** Raspberry Pi 5 · Arduino Nano · OAK-D Lite camera · L298N motor driver · 3D printed chassis
+**Hardware:** Raspberry Pi 5 · Arduino Nano · Innomaker U20CAM 1080p · L298N motor driver · 3D printed chassis
 **Software:** Node.js server · Python camera service · Plain HTML phone UI · Docker Compose · ROS 2 Humble
 
 ---
@@ -20,6 +20,9 @@ Arduino Nano
     │  PWM (ENA D5) + direction (IN1 D8, IN2 D9)
     ▼
 L298N Motor Driver  →  DC Motor
+
+Raspberry Pi 5
+    ◀──MJPEG────  Python camera service (U20CAM 1080p, /dev/video0)
 ```
 
 1. Open the web UI on your phone — you see the FPV camera feed
@@ -215,6 +218,8 @@ If no Arduino is plugged in it runs in **mock mode** (warning logged, no crash).
 Open **http://localhost:3000** in your browser.
 Use `W A S D` or arrow keys for drive controls on desktop.
 
+> Camera feed will show a "no camera" placeholder until the webcam is connected and the camera service is running.
+
 ---
 
 ## Raspberry Pi Deployment (full stack)
@@ -255,7 +260,7 @@ docker compose up -d
 
 Starts:
 - **server** — Node.js on port `3000` (UI + WebSocket + serial bridge)
-- **camera** — Python/DepthAI MJPEG on port `8080` (proxied via server)
+- **camera** — Python/OpenCV MJPEG stream on port `8080` (internal, proxied by server)
 
 ### 5. Connect your phone
 
@@ -293,9 +298,15 @@ g500_rc_car/
 │   ├── package.json
 │   └── index.html                   — touch joystick + throttle + FPV stream
 │
+├── electron/                        ← Desktop FPV UI (Electron)
+│   ├── package.json
+│   ├── main.js                      — spawns camera server, opens window
+│   ├── preload.js
+│   └── index.html                   — FPV driving UI with live MJPEG feed
+│
 ├── camera/                          ← Python camera service (RPi)
 │   ├── requirements.txt
-│   └── stream.py                    — OAK-D Lite → MJPEG via DepthAI + Flask
+│   └── webcam_stream.py             — U20CAM 1080p → MJPEG HTTP stream
 │
 ├── docker/
 │   ├── Dockerfile.server
@@ -306,9 +317,10 @@ g500_rc_car/
 │   ├── motor-first-test.md          ✅ SOLVED — L298N + DC motor confirmed working
 │   ├── arduino-firmware.md          🔄 In Progress — main firmware written, testing
 │   ├── serial-communication.md      ⬜ Not Started
-│   ├── camera-streaming.md          ⬜ Not Started
+│   ├── camera-streaming.md          🔄 In Progress — U20CAM scaffolded
+│   ├── electron-app.md              🔄 In Progress — Electron UI scaffolded
 │   ├── web-ui.md                    ⬜ Not Started
-│   ├── ros-integration.md           ⬜ Not Started
+│   ├── ros-integration.md           ⬜ Architecture defined
 │   ├── docker-setup.md              🔄 In Progress
 │   └── raspberry-pi-setup.md        ⬜ Not Started
 │
@@ -321,7 +333,8 @@ g500_rc_car/
 
 | Command | Description |
 |---------|-------------|
-| `npm install` | Install all JS dependencies |
+| `npm install` | Install all dependencies (server + ui + electron) |
+| `npm run app` | Launch Electron desktop FPV UI (starts camera server automatically) |
 | `npm run dev` | Start server with hot-reload (nodemon) |
 | `npm start` | Start server (production) |
 
@@ -372,8 +385,9 @@ Run from the firmware directory:
 → Ensure user is in `dialout` group: `sudo usermod -aG dialout $USER`.
 
 **Camera feed not showing**
-→ OAK-D Lite must be on a USB 3.0 (blue) port on the RPi 5.
-→ Check: `docker compose logs camera`.
+→ Confirm the U20CAM is plugged in and detected: `v4l2-ctl --list-devices` should show `/dev/video0`.
+→ Check camera service logs: `docker compose logs camera`.
+→ Try accessing `http://<rpi-ip>:8080/stream` directly.
 
 **Car doesn't respond to phone controls**
 → Check WebSocket status dot in the UI (top-left).
@@ -387,8 +401,9 @@ Run from the firmware directory:
 |-----------|--------|
 | Motor — L298N + DC motor | ✅ Confirmed working |
 | Arduino firmware — speed levels + failsafe | ✅ Flashed, boot confirmed |
+| Camera — U20CAM 1080p MJPEG stream | 🔄 Scaffolded, live test pending |
+| Electron desktop FPV UI | 🔄 Scaffolded, display setup pending |
 | RPi server — WebSocket + serial bridge | 🔄 Scaffolded, hardware test pending |
-| Camera — OAK-D Lite MJPEG stream | ⬜ Not started |
 | Phone UI — FPV joystick controller | 🔄 Scaffolded |
 | Docker Compose — RPi deployment | 🔄 Scaffolded |
 | ROS 2 — topic bridge + rosbag logging | ⬜ Architecture defined |
@@ -402,7 +417,8 @@ Detailed notes, issue logs, and attempt history for each subsystem:
 - [docs/motor-first-test.md](docs/motor-first-test.md) — L298N wiring, test results, ISSUE-001
 - [docs/arduino-firmware.md](docs/arduino-firmware.md) — firmware protocol, speed levels, failsafe
 - [docs/serial-communication.md](docs/serial-communication.md) — RPi ↔ Arduino serial bridge
-- [docs/camera-streaming.md](docs/camera-streaming.md) — OAK-D Lite → browser pipeline
+- [docs/camera-streaming.md](docs/camera-streaming.md) — U20CAM → browser pipeline
+- [docs/electron-app.md](docs/electron-app.md) — Electron desktop FPV UI
 - [docs/web-ui.md](docs/web-ui.md) — phone FPV controller UI
 - [docs/ros-integration.md](docs/ros-integration.md) — ROS 2 + rosbag2 logging plan
 - [docs/docker-setup.md](docs/docker-setup.md) — Docker + npm environment

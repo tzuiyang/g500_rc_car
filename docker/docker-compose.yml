@@ -9,6 +9,7 @@ version: "3.9"
 #   SERIAL_PATH  — e.g. /dev/ttyUSB0  (auto-detected if blank)
 #   SERIAL_BAUD  — default 115200
 #   CAMERA_URL   — default http://camera:8080/stream
+#   CAMERA_INDEX — default 0 (/dev/video0, Innomaker U20CAM)
 
 services:
 
@@ -33,16 +34,17 @@ services:
     networks:
       - g500
 
-  # ── Python camera service (OAK-D Lite → MJPEG) ─────────────────────────────
+  # ── Python camera service (U20CAM 1080p USB webcam → MJPEG) ─────────────────
   camera:
     build:
       context: ..
       dockerfile: docker/Dockerfile.camera
     restart: unless-stopped
-    # OAK-D Lite needs USB access
-    privileged: true
-    volumes:
-      - /dev/bus/usb:/dev/bus/usb
+    # Pass webcam V4L2 device into container
+    devices:
+      - "/dev/video0:/dev/video0"
+    environment:
+      CAMERA_INDEX: ${CAMERA_INDEX:-0}
     ports:
       - "8080:8080"   # exposed for direct debug; server proxies it internally
     networks:
