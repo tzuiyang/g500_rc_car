@@ -246,8 +246,8 @@
     <!-- Loading overlay -->
     <div class="overlay" id="overlay-loading">
       <div class="spinner"></div>
-      <div class="overlay-text">Starting camera</div>
-      <div class="overlay-sub">http://127.0.0.1:8080/stream</div>
+      <div class="overlay-text">Connecting to camera</div>
+      <div class="overlay-sub" id="stream-url-label">g500.local:8080/stream</div>
     </div>
 
     <!-- Error overlay -->
@@ -351,12 +351,10 @@
   }
 
   // ── IPC from main process ──────────────────────────────────────────
-  window.g500.onCameraStatus(({ ready, url }) => {
-    if (ready) {
-      startStream(url)
-    } else {
-      setError('Camera server failed to start — check that webcam is connected')
-    }
+  window.g500.onReady(({ streamUrl, wsUrl }) => {
+    document.getElementById('stream-url-label').textContent = streamUrl
+    startStream(streamUrl)
+    // wsUrl available for future drive controls: new WebSocket(wsUrl)
   })
 </script>
 </body>

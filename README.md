@@ -385,7 +385,7 @@ Run from the firmware directory:
 → Ensure user is in `dialout` group: `sudo usermod -aG dialout $USER`.
 
 **Camera feed not showing**
-→ Confirm the U20CAM is plugged in and detected: `v4l2-ctl --list-devices` should show `/dev/video0`.
+→ Confirm the U20CAM is plugged in and detected: `v4l2-ctl --list-devices` or `ls -la /dev/video*` (look for newest timestamp — on RPi 5 the webcam is typically `/dev/video1`, not `/dev/video0`).
 → Check camera service logs: `docker compose logs camera`.
 → Try accessing `http://<rpi-ip>:8080/stream` directly.
 
@@ -401,7 +401,7 @@ Run from the firmware directory:
 |-----------|--------|
 | Motor — L298N + DC motor | ✅ Confirmed working |
 | Arduino firmware — speed levels + failsafe | ✅ Flashed, boot confirmed |
-| Camera — U20CAM 1080p MJPEG stream | 🔄 Scaffolded, live test pending |
+| Camera — U20CAM 1080p MJPEG stream | ✅ Working — browser stream confirmed at :8080/stream |
 | Electron desktop FPV UI | 🔄 Scaffolded, display setup pending |
 | RPi server — WebSocket + serial bridge | 🔄 Scaffolded, hardware test pending |
 | Phone UI — FPV joystick controller | 🔄 Scaffolded |

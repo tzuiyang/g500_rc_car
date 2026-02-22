@@ -2,7 +2,43 @@
 
 ## Project Overview
 
-An FPV (First-Person View) RC car that people can drive remotely through their phone browser.
+An FPV (First-Person View) RC car — stream live video and drive it remotely from any laptop.
+
+---
+
+## The Workflow (read this first)
+
+### On the RPi (the car's brain) — run once per session
+```bash
+ssh yze@g500.local
+cd ~/g500_rc_car
+npm run g500:start
+```
+This starts everything on the car:
+- `camera/webcam_stream.py` → MJPEG camera stream on `:8080`
+- `server/index.js` → WebSocket + serial bridge + camera proxy on `:3000`
+- *(future)* ROS 2 nodes
+
+### On any laptop (the controller) — same command every time
+```bash
+npm run app
+```
+Opens the Electron FPV window, connects to `http://g500.local:3000`.
+
+To override the RPi address (if mDNS not working):
+```bash
+G500_URL=http://192.168.1.107:3000 npm run app
+```
+
+### First-time laptop setup (one time only)
+```bash
+git clone https://github.com/tzuiyang/g500_rc_car
+cd g500_rc_car
+npm install       # installs Electron (~100 MB) — cached forever after
+npm run app
+```
+
+---
 
 ### Hardware Stack
 | Component | Role |
@@ -14,46 +50,50 @@ An FPV (First-Person View) RC car that people can drive remotely through their p
 
 ### Software Architecture
 ```
-Phone Browser
-    │  WebSocket (drive commands) + MJPEG/WebRTC (FPV stream)
-    │  WebSocket (rosbag start/stop control)
-    ▼
-Raspberry Pi 5
-    ├── Node.js Server  (Express + WebSocket → rclnodejs → ROS 2)
-    ├── ROS 2 Network (Humble)
-    │     ├── /g500/cmd_vel          ← drive commands
-    │     ├── /g500/camera/image_raw ← camera frames
-    │     ├── /g500/arduino/status   ← MCU health
-    │     └── /g500/diagnostics      ← system health
-    ├── rosbag2 recorder  (start/stop via UI button, saves .db3 logs)
-    ├── Camera Node  (U20CAM 1080p → MJPEG stream via webcam_stream.py)
-    └── Serial Bridge Node  (ROS cmd_vel → Arduino USB serial)
-            │
-            ▼
-    Arduino Nano
-        └── PWM → ESC (throttle) + Steering Servo
+Clients — dumb display shells, zero logic, zero hardware knowledge
+    ├── Electron App  (any laptop)  ─┐
+    └── Phone Browser               ─┤  all traffic goes through port 3000
+                                     │
+                                     ▼
+                         Raspberry Pi 5  ← ALL intelligence lives here
+                         │
+                         ├── npm run g500:start  (scripts/start.sh)
+                         │     ├── camera/webcam_stream.py  → :8080  (MJPEG source)
+                         │     └── server/index.js          → :3000  (single public port)
+                         │           ├── GET  /stream   ← proxies :8080 camera
+                         │           ├── WS   /         ← drive commands
+                         │           └── GET  /         ← serves phone UI
+                         │
+                         ├── Serial → Arduino Nano → L298N → DC Motor
+                         │
+                         └── ROS 2 (future)
+                               ├── /g500/cmd_vel
+                               ├── /g500/camera/image_raw
+                               └── /g500/diagnostics
 ```
+
+### Port Map
+| Port | Service | Who connects |
+|------|---------|-------------|
+| `:8080` | Camera MJPEG (internal) | Only the server, via localhost proxy |
+| `:3000` | Node.js server (public) | Electron, phone browser, everything |
 
 ### Key Goals
 - [x] Project scaffolded and documented
-- [x] Docker / npm environment scaffold created (awaiting hardware test)
-- [x] Web UI scaffold — phone FPV controller (plain HTML, touch joystick + throttle)
-- [x] Server scaffold — Node.js Express + WebSocket + serial bridge
-- [x] Camera service scaffold — Python OpenCV MJPEG stream (webcam_stream.py)
-- [x] Arduino firmware scaffold — JSON serial protocol + failsafe
-- [x] ROS 2 integration defined — architecture + topic map
 - [x] Node.js + npm installed on RPi (v20.19.2 / 9.2.0)
-- [x] USB webcam detected (`/dev/video0`) — Innomaker U20CAM 1080p
-- [x] Webcam MJPEG stream server — `camera/webcam_stream.py` (OpenCV + Flask)
-- [x] Electron desktop app scaffolded — `npm run app` launches FPV UI with live stream
-- [ ] First live run: `npm run app` + confirm camera stream appears
-- [ ] ROS 2 Humble installed in Docker
-- [ ] rosbag2 recording + UI start/stop button
-- [ ] RPi OS setup + Docker install
-- [ ] Hardware test: Arduino serial communication
-- [ ] Hardware test: U20CAM camera stream (webcam_stream.py)
-- [ ] Driving controls in Electron UI (joystick → WebSocket → server)
-- [ ] End-to-end remote drive test
+- [x] Camera service working — `webcam_stream.py`, U20CAM at `/dev/video1`, stream confirmed in browser
+- [x] `npm run g500:start` — single command starts all RPi services (camera + server)
+- [x] `npm run app` — single command on any laptop opens FPV Electron UI, no per-machine setup
+- [x] Electron is a dumb pass-through — zero logic, connects to `http://g500.local:3000`
+- [x] Server scaffolded — WebSocket + serial bridge + camera proxy on port 3000
+- [x] Arduino firmware scaffolded — JSON serial protocol + failsafe
+- [x] Phone UI scaffolded — touch joystick + throttle
+- [ ] `npm run g500:start` end-to-end test (camera + server both up, Electron connects)
+- [ ] Hardware test: Arduino serial communication from server
+- [ ] Driving controls wired up in Electron UI (joystick → WebSocket → server → Arduino)
+- [ ] End-to-end drive test
+- [ ] ROS 2 Humble — add to `scripts/start.sh` when ready
+- [ ] rosbag2 recording + UI button
 - [ ] Chassis design / print files
 
 ---
@@ -94,6 +134,32 @@ No untested code is considered complete.
 
 ### 6. Update This File
 When milestones are reached or architecture changes, update CLAUDE.md.
+
+### 7. Electron Is a Dumb Pass-Through — NEVER add backend logic to it
+**This is a permanent architectural rule, not a temporary shortcut.**
+
+The Electron app is a zero-logic display shell. It does:
+- Open a `BrowserWindow`
+- Read `G500_URL` env var (default: `http://g500.local:3000`)
+- Pass `streamUrl` and `wsUrl` to the renderer via IPC
+- The renderer renders `<img src="${streamUrl}">` and will open `new WebSocket(wsUrl)` for controls
+
+The Electron app does NOT and MUST NOT:
+- Spawn any processes (`python3`, servers, scripts)
+- Contain any business logic, state machines, or retry orchestration
+- Know anything about the RPi, serial port, camera hardware, or ROS
+- Talk to hardware directly
+
+**Why:** The RPi is the single source of truth. Electron is just a window that could be
+replaced by any browser at any time. Any laptop (or phone) should be able to view the stream
+by pointing at `http://g500.local:8080/stream` without Electron at all.
+All intelligence lives on the RPi — in `webcam_stream.py`, `server/index.js`, and ROS nodes.
+
+**What belongs on the RPi (not Electron):**
+- Camera stream server (`camera/webcam_stream.py`) — systemd auto-start
+- Node.js WebSocket server (`server/index.js`) — systemd or Docker
+- Serial bridge to Arduino
+- ROS 2 nodes
 
 ---
 
@@ -346,6 +412,7 @@ g500_rc_car/
 │   └── docker-compose.yml
 │
 ├── scripts/
+│   ├── start.sh                     ← `npm run g500:start` — boots all RPi services
 │   ├── bag_to_csv.py                ← Export bag topic to CSV
 │   ├── bag_inspect.py               ← Check bag health/gaps
 │   └── integration_test.sh          ← Full hardware integration test
@@ -364,11 +431,17 @@ g500_rc_car/
 | 2026-02-18 | Project initialized, CLAUDE.md and directory structure created |
 | 2026-02-18 | Full code scaffold: server, UI, camera service, Arduino firmware, Docker |
 | 2026-02-18 | CLAUDE.md updated: added unit testing rules, issue format, ROS 2 integration, rosbag logging |
-| 2026-02-22 | Hardware first contact: USB webcam detected (`/dev/video0`, Innomaker U20CAM 1080p) |
+| 2026-02-22 | Hardware first contact: USB webcam detected (Innomaker U20CAM 1080p) |
 | 2026-02-22 | Node.js v20.19.2 + npm 9.2.0 installed on RPi via apt |
 | 2026-02-22 | `camera/webcam_stream.py` created — OpenCV + Flask MJPEG server for USB webcam |
 | 2026-02-22 | Electron desktop app scaffolded — `electron/` workspace, `npm run app` wired up |
+| 2026-02-22 | Camera stream debugged through 6 issues (lag, obsensor error, V4L2 backend, device index) |
+| 2026-02-22 | **Camera stream WORKING** — browser confirmed at http://192.168.1.107:8080/stream |
+| 2026-02-22 | U20CAM confirmed at `/dev/video1` on RPi 5 (not `/dev/video0` — RPi ISP nodes occupy lower numbers) |
 | 2026-02-22 | Electron v20.18.3 installed; `docs/electron-app.md` and `docs/camera-streaming.md` updated |
+| 2026-02-22 | **Architecture locked**: Electron is a dumb pass-through, all logic on RPi |
+| 2026-02-22 | `npm run g500:start` wired up (`scripts/start.sh` — starts camera + server) |
+| 2026-02-22 | Electron connects to single port 3000 via `G500_URL` env var (server proxies camera) |
 
 ---
 

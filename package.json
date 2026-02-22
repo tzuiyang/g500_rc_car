@@ -9,11 +9,10 @@
     "electron"
   ],
   "scripts": {
-    "app": "npm run app --workspace=electron",
-    "dev": "npm run dev --workspace=server & npm run dev --workspace=ui",
-    "build": "npm run build --workspace=ui",
-    "start": "npm run start --workspace=server",
-    "install:all": "npm install"
+    "g500:start": "bash scripts/start.sh",
+    "app":        "npm run app --workspace=electron",
+    "start":      "npm run start --workspace=server",
+    "dev":        "npm run dev --workspace=server"
   },
   "engines": {
     "node": ">=20.0.0"
