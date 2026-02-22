@@ -23,11 +23,16 @@ This starts everything on the car:
 ```bash
 npm run app
 ```
-Opens the Electron FPV window, connects to `http://g500.local:3000`.
+Opens the Electron FPV window, connects to the IP in `g500.config.json` (default: `http://192.168.1.107:3000`).
 
-To override the RPi address (if mDNS not working):
+To override the RPi address without editing the config:
 ```bash
 G500_URL=http://192.168.1.107:3000 npm run app
+```
+
+**If the RPi IP changes**, edit `g500.config.json` at the repo root:
+```json
+{ "rpiUrl": "http://<new-ip>:3000" }
 ```
 
 ### First-time laptop setup (one time only)
@@ -84,11 +89,12 @@ Clients — dumb display shells, zero logic, zero hardware knowledge
 - [x] Camera service working — `webcam_stream.py`, U20CAM at `/dev/video1`, stream confirmed in browser
 - [x] `npm run g500:start` — single command starts all RPi services (camera + server)
 - [x] `npm run app` — single command on any laptop opens FPV Electron UI, no per-machine setup
-- [x] Electron is a dumb pass-through — zero logic, connects to `http://g500.local:3000`
+- [x] Electron is a dumb pass-through — zero logic, connects to IP from `g500.config.json`
+- [x] `g500.config.json` — RPi IP config file, edit once when IP changes
+- [x] End-to-end test confirmed — `npm run g500:start` on RPi + `npm run app` on laptop = live FPV stream
 - [x] Server scaffolded — WebSocket + serial bridge + camera proxy on port 3000
 - [x] Arduino firmware scaffolded — JSON serial protocol + failsafe
 - [x] Phone UI scaffolded — touch joystick + throttle
-- [ ] `npm run g500:start` end-to-end test (camera + server both up, Electron connects)
 - [ ] Hardware test: Arduino serial communication from server
 - [ ] Driving controls wired up in Electron UI (joystick → WebSocket → server → Arduino)
 - [ ] End-to-end drive test
@@ -140,7 +146,7 @@ When milestones are reached or architecture changes, update CLAUDE.md.
 
 The Electron app is a zero-logic display shell. It does:
 - Open a `BrowserWindow`
-- Read `G500_URL` env var (default: `http://g500.local:3000`)
+- Read `rpiUrl` from `g500.config.json` (or `G500_URL` env var override)
 - Pass `streamUrl` and `wsUrl` to the renderer via IPC
 - The renderer renders `<img src="${streamUrl}">` and will open `new WebSocket(wsUrl)` for controls
 
@@ -348,6 +354,7 @@ g500_rc_car/
 ├── CLAUDE.md                        ← this file
 ├── README.md                        ← user-facing setup guide
 ├── package.json                     ← npm workspace root
+├── g500.config.json                 ← RPi IP address config (edit when IP changes)
 ├── .gitignore
 │
 ├── docs/                            ← one .md per topic/subsystem
@@ -442,6 +449,9 @@ g500_rc_car/
 | 2026-02-22 | **Architecture locked**: Electron is a dumb pass-through, all logic on RPi |
 | 2026-02-22 | `npm run g500:start` wired up (`scripts/start.sh` — starts camera + server) |
 | 2026-02-22 | Electron connects to single port 3000 via `G500_URL` env var (server proxies camera) |
+| 2026-02-22 | ISSUE-002: Port 3000 EADDRINUSE on restart (errno: -98) — fixed with stale-process cleanup in `start.sh` |
+| 2026-02-22 | ISSUE-003: mDNS `g500.local` not resolving on Windows — fixed with `g500.config.json` IP-based config |
+| 2026-02-22 | **End-to-end CONFIRMED** — `npm run g500:start` (RPi) + `npm run app` (laptop) → live FPV stream in Electron |
 
 ---
 
@@ -449,7 +459,7 @@ g500_rc_car/
 
 - **RPi 5** runs Raspberry Pi OS (64-bit). Ensure USB serial is enabled.
 - **Arduino Nano** connected via USB to RPi 5. Serial baud 115200.
-- **Camera** — Innomaker U20CAM 1080p. USB 2.0 UVC webcam. Detected as `/dev/video0`. Streams via `camera/webcam_stream.py`.
+- **Camera** — Innomaker U20CAM 1080p. USB 2.0 UVC webcam. Detected as `/dev/video1` on RPi 5 (NOT `/dev/video0` — RPi ISP/codec nodes occupy lower indices). Streams via `camera/webcam_stream.py` on port 8080.
 - **ESC** — type TBD based on motor selection.
 - **Steering servo** — standard 50 Hz PWM, 1000–2000 µs.
 

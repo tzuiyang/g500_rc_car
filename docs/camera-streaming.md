@@ -382,14 +382,13 @@ Specified filename /dev/video0 does not exist.
 `[x] Browser stream confirmed at http://192.168.1.107:8080/stream`
 `[x] OBSensor error suppressed`
 `[x] Camera correctly opens at /dev/video1`
-`[ ] Electron window live run (blocked by no display on RPi — need X11 forwarding)`
+`[x] Electron window live run confirmed — Electron runs on laptop (not RPi), connects via port 3000`
 `[ ] Latency measured`
 `[ ] Phone browser access tested`
 `[ ] tests/camera/test_stream.py written and passing`
 
 ### Next Actions
 - [ ] Test phone browser access: `http://192.168.1.107:8080/stream` from phone on same WiFi
-- [ ] Get Electron working via X11 forwarding (`ssh -X` from Windows + VcXsrv)
 - [ ] Measure latency (clock-in-front-of-camera method)
 - [ ] Write `tests/camera/test_stream.py` with mocked VideoCapture
 - [ ] Test camera auto-recovery: unplug → replug → confirm stream resumes
